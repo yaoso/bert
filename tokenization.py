@@ -122,7 +122,7 @@ def load_vocab(vocab_file):
   """Loads a vocabulary file into a dictionary."""
   vocab = collections.OrderedDict()
   index = 0
-  with tf.gfile.GFile(vocab_file, "r") as reader:
+  with tf.io.gfile.GFile(vocab_file, "r") as reader:
     while True:
       token = convert_to_unicode(reader.readline())
       if not token:
@@ -164,7 +164,7 @@ class FullTokenizer(object):
   def __init__(self, vocab_file, do_lower_case=True):
     self.vocab = load_vocab(vocab_file)
     self.inv_vocab = {v: k for k, v in self.vocab.items()}
-    self.basic_tokenizer = BasicTokenizer(do_lower_case=do_lower_case)
+    self.basic_tokenizer = BasicTokenizer(do_lower_case=do_lower_case)  # to token raw text, simply word segmentation
     self.wordpiece_tokenizer = WordpieceTokenizer(vocab=self.vocab)
 
   def tokenize(self, text):
@@ -204,9 +204,9 @@ class BasicTokenizer(object):
     # and generally don't have any Chinese data in them (there are Chinese
     # characters in the vocabulary because Wikipedia does have some Chinese
     # words in the English Wikipedia.).
-    text = self._tokenize_chinese_chars(text)
+    text = self._tokenize_chinese_chars(text)  # Chinese character special treatment, not CJK
 
-    orig_tokens = whitespace_tokenize(text)
+    orig_tokens = whitespace_tokenize(text)  # "你好" == > ['你', '好']
     split_tokens = []
     for token in orig_tokens:
       if self.do_lower_case:
@@ -254,7 +254,7 @@ class BasicTokenizer(object):
     for char in text:
       cp = ord(char)
       if self._is_chinese_char(cp):
-        output.append(" ")
+        output.append(" ")  # Chinese character segmentation, "你好" == > " 你  好 "
         output.append(char)
         output.append(" ")
       else:
