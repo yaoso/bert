@@ -23,7 +23,7 @@ import random
 import tokenization
 import tensorflow as tf
 
-flags = tf.flags
+flags = tf.compat.v1.flags
 
 FLAGS = flags.FLAGS
 
@@ -180,7 +180,7 @@ def create_training_instances(input_files, tokenizer, max_seq_length,
                               dupe_factor, short_seq_prob, masked_lm_prob,
                               max_predictions_per_seq, rng):
   """Create `TrainingInstance`s from raw text."""
-  all_documents = [[]]
+  all_documents = [[]]  # 内部每个list表示一个document
 
   # Input file format:
   # (1) One sentence per line. These should ideally be actual sentences, not
@@ -197,9 +197,9 @@ def create_training_instances(input_files, tokenizer, max_seq_length,
         line = line.strip()
 
         # Empty lines are used as document delimiters
-        if not line:
+        if not line:  # blank line, 说明一个document结束，
           all_documents.append([])
-        tokens = tokenizer.tokenize(line)
+        tokens = tokenizer.tokenize(line)  # 对当前这一行进行tokenize, 
         if tokens:
           all_documents[-1].append(tokens)
 
@@ -209,7 +209,7 @@ def create_training_instances(input_files, tokenizer, max_seq_length,
 
   vocab_words = list(tokenizer.vocab.keys())
   instances = []
-  for _ in range(dupe_factor):
+  for _ in range(dupe_factor):  # duplicate_factor, 这里建议自行设置
     for document_index in range(len(all_documents)):
       instances.extend(
           create_instances_from_document(
@@ -224,7 +224,7 @@ def create_instances_from_document(
     all_documents, document_index, max_seq_length, short_seq_prob,
     masked_lm_prob, max_predictions_per_seq, vocab_words, rng):
   """Creates `TrainingInstance`s for a single document."""
-  document = all_documents[document_index]
+  document = all_documents[document_index]  # 从一个document中创建多个训练样本
 
   # Account for [CLS], [SEP], [SEP]
   max_num_tokens = max_seq_length - 3
@@ -235,7 +235,7 @@ def create_instances_from_document(
   # (i.e., short_seq_prob == 0.1 == 10% of the time) want to use shorter
   # sequences to minimize the mismatch between pre-training and fine-tuning.
   # The `target_seq_length` is just a rough target however, whereas
-  # `max_seq_length` is a hard limit.
+  # `max_seq_length` is a hard limit.  target_seq_length只是一个大概的约束，max_seq_length是硬约束
   target_seq_length = max_num_tokens
   if rng.random() < short_seq_prob:
     target_seq_length = rng.randint(2, max_num_tokens)
@@ -250,9 +250,9 @@ def create_instances_from_document(
   current_length = 0
   i = 0
   while i < len(document):
-    segment = document[i]
+    segment = document[i]  # 完整的句子
     current_chunk.append(segment)
-    current_length += len(segment)
+    current_length += len(segment)  # token个数
     if i == len(document) - 1 or current_length >= target_seq_length:
       if current_chunk:
         # `a_end` is how many segments from `current_chunk` go into the `A`
@@ -321,7 +321,7 @@ def create_instances_from_document(
         (tokens, masked_lm_positions,
          masked_lm_labels) = create_masked_lm_predictions(
              tokens, masked_lm_prob, max_predictions_per_seq, vocab_words, rng)
-        instance = TrainingInstance(
+        instance = TrainingInstance(  # 一个训练样本
             tokens=tokens,
             segment_ids=segment_ids,
             is_random_next=is_random_next,
