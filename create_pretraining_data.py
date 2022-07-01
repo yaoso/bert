@@ -150,7 +150,7 @@ def create_float_feature(values):
 
 def create_training_instances(input_files, tokenizer, max_seq_length,
                               dupe_factor, short_seq_prob, masked_lm_prob,
-                              max_predictions_per_seq, rng):
+                              max_predictions_per_seq, do_whole_word_mask, rng):
   """Create `TrainingInstance`s from raw text."""
   all_documents = [[]]  # 内部每个list表示一个document
 
@@ -186,7 +186,7 @@ def create_training_instances(input_files, tokenizer, max_seq_length,
       instances.extend(
           create_instances_from_document(
               all_documents, document_index, max_seq_length, short_seq_prob,
-              masked_lm_prob, max_predictions_per_seq, vocab_words, rng))
+              masked_lm_prob, max_predictions_per_seq, vocab_words, do_whole_word_mask, rng))
 
   rng.shuffle(instances)
   return instances
@@ -194,7 +194,7 @@ def create_training_instances(input_files, tokenizer, max_seq_length,
 
 def create_instances_from_document(
     all_documents, document_index, max_seq_length, short_seq_prob,
-    masked_lm_prob, max_predictions_per_seq, vocab_words, rng):
+    masked_lm_prob, max_predictions_per_seq, vocab_words, do_whole_word_mask, rng):
   """Creates `TrainingInstance`s for a single document."""
   document = all_documents[document_index]  # 从一个document中创建多个训练样本
 
@@ -292,7 +292,7 @@ def create_instances_from_document(
 
         (tokens, masked_lm_positions,
          masked_lm_labels) = create_masked_lm_predictions(
-             tokens, masked_lm_prob, max_predictions_per_seq, vocab_words, rng)
+             tokens, masked_lm_prob, max_predictions_per_seq, vocab_words, do_whole_word_mask, rng)
         instance = TrainingInstance(  # 一个训练样本
             tokens=tokens,
             segment_ids=segment_ids,
@@ -312,7 +312,7 @@ MaskedLmInstance = collections.namedtuple("MaskedLmInstance",
 
 
 def create_masked_lm_predictions(tokens, masked_lm_prob,
-                                 max_predictions_per_seq, vocab_words, rng):
+                                 max_predictions_per_seq, vocab_words, do_whole_word_mask, rng):
   """Creates the predictions for the masked LM objective."""
 
   cand_indexes = []
@@ -328,7 +328,7 @@ def create_masked_lm_predictions(tokens, masked_lm_prob,
     # Note that Whole Word Masking does *not* change the training code
     # at all -- we still predict each WordPiece independently, softmaxed
     # over the entire vocabulary.
-    if (FLAGS.do_whole_word_mask and len(cand_indexes) >= 1 and
+    if (do_whole_word_mask and len(cand_indexes) >= 1 and
         token.startswith("##")):
       cand_indexes[-1].append(i)
     else:
@@ -405,40 +405,53 @@ def truncate_seq_pair(tokens_a, tokens_b, max_num_tokens, rng):
       trunc_tokens.pop()
 
 
-def main(_):
+def process(input_file, output_file, vocab_file, do_lower_case=False, max_seq_length=512, short_seq_prob=0.1,
+            masked_lm_prob=0.15, dupe_factor=5, max_predictions_per_seq=20, do_whole_word_mask=False, random_seed=12345):
+  from google.cloud import storage
+  client = storage.Client()
+  bucket = client.get_bucket('us-central1-f-wukong')
+  
   tf.logging.set_verbosity(tf.logging.INFO)
 
   tokenizer = tokenization.FullTokenizer(
-      vocab_file=FLAGS.vocab_file, do_lower_case=FLAGS.do_lower_case)
+      vocab_file=vocab_file, do_lower_case=do_lower_case)
 
   input_files = []
-  for input_pattern in FLAGS.input_file.split(","):
+  for input_pattern in input_file.split(","):
     input_files.extend(tf.gfile.Glob(input_pattern))
 
   tf.logging.info("*** Reading from input files ***")
   for input_file in input_files:
     tf.logging.info("  %s", input_file)
 
-  rng = random.Random(FLAGS.random_seed)
+  rng = random.Random(random_seed)
   instances = create_training_instances(
-      input_files, tokenizer, FLAGS.max_seq_length, FLAGS.dupe_factor,
-      FLAGS.short_seq_prob, FLAGS.masked_lm_prob, FLAGS.max_predictions_per_seq,
-      rng)
+      input_files, tokenizer, max_seq_length, dupe_factor,
+      short_seq_prob, masked_lm_prob, max_predictions_per_seq,
+      do_whole_word_mask, rng)
 
-  output_files = FLAGS.output_file.split(",")
+  output_files = output_file.split(",")
   tf.logging.info("*** Writing to output files ***")
   for output_file in output_files:
     tf.logging.info("  %s", output_file)
 
-  dataset = write_instance_to_example_files(instances, tokenizer, FLAGS.max_seq_length,
-                                  FLAGS.max_predictions_per_seq, output_files)
+  dataset = write_instance_to_example_files(instances, tokenizer, max_seq_length,
+                                            max_predictions_per_seq, output_files)
   df = pd.DataFrame(dataset)
-  print(df.head(1))
-  df.to_parquet(FLAGS.output_file + ".parquet")
+#   print(df.head(1))
+  df.to_parquet(output_file + ".parquet")
+  new_blob = bucket.blob("WuDaoCorpus/bert_pretrainint/" + output_file + ".parquet")
+  new_blob.upload_from_filename(filename="./" + output_file + ".parquet")
+  import os
+  os.remove(output_file + ".parquet")
+  
+
+# +
+# if __name__ == "__main__":
+#   flags.mark_flag_as_required("input_file")
+#   flags.mark_flag_as_required("output_file")
+#   flags.mark_flag_as_required("vocab_file")
+#   tf.app.run()
+# -
 
 
-if __name__ == "__main__":
-  flags.mark_flag_as_required("input_file")
-  flags.mark_flag_as_required("output_file")
-  flags.mark_flag_as_required("vocab_file")
-  tf.app.run()
